@@ -3,7 +3,7 @@
 Installation:
 
 ```
-cargo install xivar
+cargo install collclean
 ```
 
 Example call
