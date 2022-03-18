@@ -1,5 +1,11 @@
 # collclean
 
+Installation:
+
+```
+cargo install xivar
+```
+
 Example call
 
 ```
