@@ -38,20 +38,14 @@ struct Pattern {
     text: Vec<char>,
     start: Option<usize>,
     current: usize,
-    count: BracketCount,
-    processing: Process,
 }
 
-// Todo builder
-
 impl Pattern {
-    fn new(text: &str, count: BracketCount, processing: Process) -> Self {
+    fn new(text: &str) -> Self {
         Self {
             text: text.chars().collect(),
             start: None,
             current: 0,
-            count,
-            processing,
         }
     }
 
@@ -81,18 +75,6 @@ impl Pattern {
     }
 }
 
-enum BracketCount {
-    CountUp,
-    CountDown,
-    NoCount,
-}
-
-enum Process {
-    Keep,
-    Delete,
-    DeleteOnDepth,
-}
-
 struct Deletion {
     start: usize,
     end: usize,
@@ -108,84 +90,69 @@ impl Deletion {
     }
 }
 
-fn clean(text: &mut String, commands: Vec<&str>) -> Result<usize> {
-    let mut patterns: Vec<Pattern> = commands
-        .into_iter()
-        .map(|comm| {
-            Pattern::new(
-                &format!("\\{}{{", comm),
-                BracketCount::CountUp,
-                Process::Delete,
-            )
-        })
-        .collect();
+enum Type {
+    Command,
+    Other,
+}
 
-    patterns.push(Pattern::new("\\{", BracketCount::NoCount, Process::Keep));
-    patterns.push(Pattern::new("\\}", BracketCount::NoCount, Process::Keep));
-    patterns.push(Pattern::new("{", BracketCount::CountUp, Process::Keep));
-    patterns.push(Pattern::new(
-        "}",
-        BracketCount::CountDown,
-        Process::DeleteOnDepth,
-    ));
+fn clean(text: &mut String, commands: Vec<&str>) -> Result<usize> {
+    let mut patterns: Vec<(Pattern, Type)> = commands
+        .into_iter()
+        .map(|comm| (Pattern::new(&format!("\\{}{{", comm)), Type::Command))
+        .collect();
+    patterns.push((Pattern::new("\\{"), Type::Other));
+    patterns.push((Pattern::new("\\}"), Type::Other));
+    patterns.push((Pattern::new("\\%"), Type::Other));
 
     let mut deletions: Vec<Deletion> = vec![];
-
     let mut depth: usize = 0;
-
     let mut deleted_depths: Vec<usize> = vec![];
-
     let mut commented = false;
 
-    let mut last_c: Option<char> = None;
-
-    for (i, c) in text.char_indices() {
-        if c == '\n' {
-            commented = false;
-        }
-
-        if c == '%' && last_c != Some('\\') {
-            commented = true;
-        }
-        last_c = Some(c);
-
+    'chars: for (i, c) in text.char_indices() {
         if !commented {
-            'patterns: for p in patterns.iter_mut() {
+            for (p, t) in patterns.iter_mut() {
                 if let Some(s) = p.next(i, c) {
-                    match (&p.processing, &p.count) {
-                        (Process::Keep, BracketCount::CountUp) => depth += 1,
-                        (Process::Keep, BracketCount::CountDown) => {
-                            if depth == 0 {
-                                bail!("It seems that there is a opening bracket without closing counterpart! Stopping! (no changes made) {}", &text[(i.max(10) - 10)..(i+10).min(text.len() - 1)])
-                            }
-                            depth -= 1
-                        }
-                        (Process::Delete, BracketCount::CountUp) => {
+                    match t {
+                        Type::Command => {
                             deleted_depths.push(depth);
                             depth += 1;
                             let deletion = Deletion::range(s, s + p.len() - 1);
                             deletions.push(deletion);
                         }
-                        (Process::DeleteOnDepth, BracketCount::CountDown) => {
-                            if depth == 0 {
-                                bail!("It seems that there is a opening bracket without closing counterpart! Stopping! (no changes made) {}", &text[(i.max(10) - 10)..(i+10).min(text.len() - 1)])
-                            }
-                            depth -= 1;
-                            if let Some(last) = deleted_depths.last() {
-                                if *last == depth {
-                                    deleted_depths.remove(deleted_depths.len() - 1);
-                                    let deletion = Deletion::range(s, s + p.len() - 1);
-                                    deletions.push(deletion);
-                                }
-                            }
-                        }
-                        (_, _) => {}
+                        Type::Other => {}
                     }
-
-                    break 'patterns;
+                    continue 'chars;
                 }
             }
         }
+        match c {
+            '}' if !commented => {
+                if depth == 0 {
+                    bail!("It seems that there is a closing bracket without opening counterpart! Stopping! (no changes made) {}", &text[(i.max(10) - 10)..(i+10).min(text.len() - 1)])
+                }
+                depth -= 1;
+                if let Some(last) = deleted_depths.last() {
+                    if *last == depth {
+                        deleted_depths.remove(deleted_depths.len() - 1);
+                        let deletion = Deletion::range(i, i);
+                        deletions.push(deletion);
+                    }
+                }
+            }
+            '{' if !commented => depth += 1,
+            '%' => {
+                commented = true;
+            }
+            '\n' => {
+                commented = false;
+            }
+            _ => {}
+        }
+    }
+
+    if depth > 0 {
+        bail!("It seems that there is a opening bracket without closing counterpart! Stopping! (no changes made)")
     }
 
     let mut deleted: usize = 0;
@@ -261,10 +228,10 @@ mod test_clean {
     }
 
     #[test]
-    fn test_clean_no_comment() -> Result<()> {
-        let mut text = String::from("% \\anew{ } \n");
+    fn test_clean_no_comment_newline() -> Result<()> {
+        let mut text = String::from("% % \\anew{ } \n \\anew{}");
         clean(&mut text, vec!["anew"])?;
-        assert_eq!(text, "% \\anew{ } \n");
+        assert_eq!(text, "% % \\anew{ } \n ");
         Ok(())
     }
 }
