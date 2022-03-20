@@ -5,36 +5,47 @@
 [![dependency status](https://deps.rs/crate/collclean/0.2.0/status.svg)](https://deps.rs/crate/collclean/0.2.0)
 ![License: MIT/Apache-2.0](https://img.shields.io/crates/l/collclean.svg)
 
-Installation:
+## Usage
+
+Consider a valid LaTeX file `paper.tex`, where several parts are marked by collaborators using `\alice` and `\bob`:
+
+```tex
+Lorem ipsum \alice{dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna 
+aliquyam erat, sed diam voluptua.} At vero eos et accusam et justo duo dolores et ea rebum. 
+\[
+    A = \min \{ B, \bob{C \} }
+\]
+% \alice{Lorem ipsum dolor sit amet
+Stet clita kasd gubergren, \alice{no} sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur 
+sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos 
+et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem {ipsum dolor sit amet.}
+```
+
+To remove these commands and the corresponding brackets, run `collclean paper.tex alice bob`. The file `paper.tex` will then look like this:
+
+```tex
+Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna 
+aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. 
+\[
+    A = \min \{ B, C \} 
+\]
+% \alice{Lorem ipsum dolor sit amet
+Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur 
+sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos 
+et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem {ipsum dolor sit amet.}
+```
+
+### Further notes:
+
+* The command definitions (e.g. via `\newcommand`) will not get removed.
+* Commented lines are ignored.
+* If the original file should stay unchanged, use the option `-o output.tex` to write the cleaned content to the file `output.tex`.
+
+## Installation:
+
+After [installing Rust](https://rustup.rs/), install `collclean` via `cargo`:
 
 ```bash
 cargo install collclean
 ```
 
-Example call
-
-```bash
-collclean file.tex mycomm1 mycomm2 ...
-```
-
-`file.tex` (if it does not compile, collclean will remove nothing)
-
-```tex
-\mycomm1{I wrote that!}
-\mycomm2{I wrote that! \mycomm2{lalalala} y\{y{y}y{} }
-```
-
-`file.tex` afterwards
-
-```tex
-I wrote that!
-I wrote that! lalalala y\{y{y}y{} 
-```
-
-The command definitions (e.g. via `\newcommand`) will not get removed.
-
-Output to new file
-
-```bash
-collclean file.tex mycomm1 -o new_file.tex
-```
