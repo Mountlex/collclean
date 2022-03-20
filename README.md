@@ -10,29 +10,35 @@
 Consider a valid LaTeX file `paper.tex`, where several parts are marked by collaborators using `\alice` and `\bob`:
 
 ```tex
-Lorem ipsum \alice{dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna 
-aliquyam erat, sed diam voluptua.} At vero eos et accusam et justo duo dolores et ea rebum. 
+Lorem ipsum \alice{dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.} At vero eos et accusam
+et justo duo dolores et ea rebum. 
 \[
     A = \min \{ B, \bob{C \} }
 \]
 % \alice{Lorem ipsum dolor sit amet
-Stet clita kasd gubergren, \alice{no} sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur 
-sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos 
-et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem {ipsum dolor sit amet.}
+Stet clita kasd gubergren, \alice{no} sea takimata sanctus est Lorem ipsum dolor sit amet. 
+Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam 
+et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus 
+est Lorem {ipsum dolor sit amet.}
 ```
 
 To remove these commands and the corresponding brackets, run `collclean paper.tex alice bob`. The file `paper.tex` will then look like this:
 
 ```tex
-Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna 
-aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. 
+Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam
+et justo duo dolores et ea rebum. 
 \[
     A = \min \{ B, C \} 
 \]
 % \alice{Lorem ipsum dolor sit amet
-Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur 
-sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos 
-et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem {ipsum dolor sit amet.}
+Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. 
+Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam 
+et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus 
+est Lorem {ipsum dolor sit amet.}
 ```
 
 ### Further notes:
