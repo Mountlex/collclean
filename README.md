@@ -24,7 +24,13 @@ et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata san
 est Lorem {ipsum dolor sit amet.}
 ```
 
-To remove these commands and the corresponding brackets, run `collclean paper.tex alice bob`. The file `paper.tex` will then look like this:
+To remove these commands and the corresponding brackets, run 
+
+```bash
+collclean paper.tex alice bob
+```
+
+ The file `paper.tex` will then look like this:
 
 ```tex
 Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
@@ -43,7 +49,7 @@ est Lorem {ipsum dolor sit amet.}
 
 ### Further notes:
 
-* The command definitions (e.g. via `\newcommand`) will not get removed.
+* The command definitions (e.g. via `\newcommand`) will **not** get removed.
 * Commented lines are ignored.
 * If the original file should stay unchanged, use the option `-o output.tex` to write the cleaned content to the file `output.tex`.
 
