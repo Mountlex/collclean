@@ -1,6 +1,6 @@
 [package]
 name = "collclean"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 authors = ["Alexander Lindermayr <alexander.lindermayr97@gmail.com>"]
@@ -8,5 +8,5 @@ repository = "https://github.com/Mountlex/collclean"
 description = "Clean up collaboration commands in LaTeX files"
 
 [dependencies]
-clap = "3.1.6"
+clap = "4"
 anyhow = "1"

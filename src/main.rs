@@ -7,24 +7,27 @@ fn main() -> Result<()> {
         .author("Alexander Lindermayr <alexander.lindermayr97@gmail.com>")
         .about("Clean LaTeX files after a collaboration.")
         .arg(arg!(<FILE>))
-        .arg(
-            arg!([COMMANDS])
-                .required(true)
-                .multiple_values(true)
-                .takes_value(true)
-                .allow_invalid_utf8(true),
-        )
-        .arg(arg!(-o - -output[output]).allow_invalid_utf8(true))
+        .arg(arg!([COMMANDS]).required(true).num_args(1..))
+        .arg(arg!(-o - -output[output]))
         .get_matches();
 
-    let path = matches.value_of_os("FILE").map(std::path::PathBuf::from);
-    let commands = matches.values_of("COMMANDS").unwrap().collect();
+    let path = matches
+        .get_one::<String>("FILE")
+        .map(std::path::PathBuf::from);
+    let commands = matches
+        .get_many::<String>("COMMANDS")
+        .expect("no commands")
+        .map(|s| s.as_str())
+        .collect();
     if let Some(path) = path {
         if path.exists() {
             let mut text = std::fs::read_to_string(&path)?;
             let num = clean(&mut text, commands)?;
             println!("Removed {} commands!", num / 2);
-            if let Some(output) = matches.value_of_os("output").map(std::path::PathBuf::from) {
+            if let Some(output) = matches
+                .get_one::<String>("output")
+                .map(std::path::PathBuf::from)
+            {
                 std::fs::write(output, text)?;
             } else {
                 std::fs::write(path, text)?;
