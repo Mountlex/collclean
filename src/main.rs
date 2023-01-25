@@ -1,19 +1,25 @@
 use std::fmt::Write;
 
 use anyhow::{bail, Result};
-use clap::{arg, Command};
+use clap::{arg, ArgAction, Command};
 use yansi::{Paint, Style};
 
 fn main() -> Result<()> {
     let matches = Command::new("collclean")
-        .version("0.1")
+        .version("0.3.0")
         .author("Alexander Lindermayr <alexander.lindermayr97@gmail.com>")
         .about("Clean LaTeX files after a collaboration.")
         .arg(arg!(<FILE>))
         .arg(arg!([COMMANDS]).required(true).num_args(1..))
         .arg(arg!(-o - -output[output]))
+        .arg(arg!(--from[from]).value_parser(clap::value_parser!(usize)))
+        .arg(arg!(--to[to]).value_parser(clap::value_parser!(usize)))
+        .arg(arg!(--dry[dry]).action(ArgAction::SetTrue))
         .get_matches();
 
+    let dry = matches.get_flag("dry");
+    let from_line = matches.get_one::<usize>("from").copied();
+    let to_line = matches.get_one::<usize>("to").copied();
     let path = matches
         .get_one::<String>("FILE")
         .map(std::path::PathBuf::from);
@@ -25,17 +31,20 @@ fn main() -> Result<()> {
     if let Some(path) = path {
         if path.exists() {
             let mut text = std::fs::read_to_string(&path)?;
-            let deletions = find_deletions(&text, commands)?;
+            let deletions = find_deletions(&text, commands, from_line, to_line)?;
             print_deletions(&text, &deletions)?;
-            let num = clean_text(&mut text, deletions)?;
-            println!("Removed {} commands!", num / 2);
-            if let Some(output) = matches
-                .get_one::<String>("output")
-                .map(std::path::PathBuf::from)
-            {
-                std::fs::write(output, text)?;
-            } else {
-                std::fs::write(path, text)?;
+
+            if !dry {
+                let num = clean_text(&mut text, deletions)?;
+                println!("Removed {} commands!", num / 2);
+                if let Some(output) = matches
+                    .get_one::<String>("output")
+                    .map(std::path::PathBuf::from)
+                {
+                    std::fs::write(output, text)?;
+                } else {
+                    std::fs::write(path, text)?;
+                }
             }
         }
     }
@@ -87,15 +96,20 @@ impl Pattern {
 struct Deletion {
     start: usize,
     end: usize,
+    line: usize,
 }
 
 impl Deletion {
-    fn range(start: usize, end: usize) -> Self {
-        Deletion { start, end }
+    fn range(start: usize, end: usize, line: usize) -> Self {
+        Deletion { start, end, line }
     }
 
     fn len(&self) -> usize {
         self.end - self.start + 1
+    }
+
+    fn line(&self) -> usize {
+        self.line
     }
 }
 
@@ -104,7 +118,12 @@ enum Type {
     Other,
 }
 
-fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
+fn find_deletions(
+    text: &str,
+    commands: Vec<&str>,
+    from: Option<usize>,
+    to: Option<usize>,
+) -> Result<Vec<Deletion>> {
     let mut patterns: Vec<(Pattern, Type)> = commands
         .into_iter()
         .map(|comm| (Pattern::new(&format!("\\{}{{", comm)), Type::Command))
@@ -117,8 +136,14 @@ fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
     let mut depth: usize = 0;
     let mut deleted_depths: Vec<usize> = vec![];
     let mut commented = false;
+    let mut line: usize = 0;
+    let mut deleted_commands: Vec<(Deletion, Deletion)> = vec![];
 
     'chars: for (i, c) in text.char_indices() {
+        if c == '\n' {
+            line += 1;
+        }
+
         if !commented {
             for (p, t) in patterns.iter_mut() {
                 if let Some(s) = p.next(i, c) {
@@ -126,7 +151,7 @@ fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
                         Type::Command => {
                             deleted_depths.push(depth);
                             depth += 1;
-                            let deletion = Deletion::range(s, s + p.len() - 1);
+                            let deletion = Deletion::range(s, s + p.len() - 1, line);
                             deletions.push(deletion);
                         }
                         Type::Other => {}
@@ -135,6 +160,7 @@ fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
                 }
             }
         }
+
         match c {
             '}' if !commented => {
                 if depth == 0 {
@@ -143,9 +169,11 @@ fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
                 depth -= 1;
                 if let Some(last) = deleted_depths.last() {
                     if *last == depth {
-                        deleted_depths.remove(deleted_depths.len() - 1);
-                        let deletion = Deletion::range(i, i);
-                        deletions.push(deletion);
+                        deleted_depths.pop();
+                        let opening = deletions.pop().expect("It seems that there is a closing bracket without matching opening bracket! Stopping! (no changes made)");
+                        let closing = Deletion::range(i, i, line);
+
+                        deleted_commands.push((opening, closing));
                     }
                 }
             }
@@ -160,13 +188,24 @@ fn find_deletions(text: &str, commands: Vec<&str>) -> Result<Vec<Deletion>> {
         }
     }
 
-    if depth > 0 {
+    if depth > 0 || !deletions.is_empty() {
         bail!("It seems that there is a opening bracket without closing counterpart! Stopping! (no changes made)")
     }
 
-    deletions.sort();
+    let mut final_deletions: Vec<Deletion> = deleted_commands
+        .into_iter()
+        .filter(|comm| {
+            (from.is_none()
+                || (comm.0.line + 1 >= from.unwrap() && comm.1.line + 1 >= from.unwrap()))
+                && (to.is_none()
+                    || (comm.0.line + 1 <= to.unwrap() && comm.1.line + 1 <= to.unwrap()))
+        })
+        .flat_map(|comm| vec![comm.0, comm.1])
+        .collect();
 
-    Ok(deletions)
+    final_deletions.sort();
+
+    Ok(final_deletions)
 }
 
 fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
@@ -185,35 +224,39 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
 
             let line_len = line.len();
             let line_end = line_start + line_len;
-            let mut dels = vec![];
+            let mut line_deletions = vec![];
 
             while let Some(del) = current {
-                if line_start <= del.start && del.end <= line_end {
-                    dels.push(del);
+                if del.line() == l {
+                    line_deletions.push(del);
                     current = deletions_iter.next();
                 } else {
                     break;
                 }
             }
 
-            if !dels.is_empty() {
+            if !line_deletions.is_empty() {
                 let mut string = String::new();
-                let line_str = format!("{}", Style::default().dimmed().paint(format!("L{}: ", l)));
+                let line_str = format!(
+                    "{}",
+                    Style::default().dimmed().paint(format!("L{}: ", l + 1))
+                );
                 string.write_str(&line_str)?;
 
-                let first_part = &text[line_start..dels.first().unwrap().start];
+                let first_part = &text[line_start..line_deletions.first().unwrap().start];
                 add_part(first_part, &mut string, Side::Left)?;
-                let first_del = &text[dels.first().unwrap().start..=dels.first().unwrap().end];
+                let first_del = &text
+                    [line_deletions.first().unwrap().start..=line_deletions.first().unwrap().end];
                 add_del(first_del, &mut string)?;
 
-                for w in dels.windows(2) {
+                for w in line_deletions.windows(2) {
                     let gap = &text[w[0].end + 1..w[1].start];
                     add_part(gap, &mut string, Side::Center)?;
                     let del = &text[w[1].start..=w[1].end];
                     add_del(del, &mut string)?;
                 }
 
-                let last_part = &text[dels.last().unwrap().end + 1..line_end];
+                let last_part = &text[line_deletions.last().unwrap().end + 1..line_end];
                 add_part(last_part, &mut string, Side::Right)?;
 
                 string.retain(|c| c != '\n');
@@ -283,7 +326,7 @@ mod test_clean {
     use super::*;
 
     fn clean(text: &mut String, commands: Vec<&str>) -> Result<usize> {
-        let deletions = find_deletions(text, commands)?;
+        let deletions = find_deletions(text, commands, None, None)?;
         clean_text(text, deletions)
     }
 
