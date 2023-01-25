@@ -126,7 +126,7 @@ fn find_deletions(
 ) -> Result<Vec<Deletion>> {
     let mut patterns: Vec<(Pattern, Type)> = commands
         .into_iter()
-        .map(|comm| (Pattern::new(&format!("\\{}{{", comm)), Type::Command))
+        .map(|comm| (Pattern::new(&format!("\\{comm}{{")), Type::Command))
         .collect();
     patterns.push((Pattern::new("\\{"), Type::Other));
     patterns.push((Pattern::new("\\}"), Type::Other));
@@ -198,7 +198,7 @@ fn find_deletions(
             (from.is_none()
                 || (comm.0.line + 1 >= from.unwrap() && comm.1.line + 1 >= from.unwrap()))
                 && (to.is_none()
-                    || (comm.0.line + 1 <= to.unwrap() && comm.1.line + 1 <= to.unwrap()))
+                    || (comm.0.line < to.unwrap() && comm.1.line < to.unwrap()))
         })
         .flat_map(|comm| vec![comm.0, comm.1])
         .collect();
@@ -261,7 +261,7 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
 
                 string.retain(|c| c != '\n');
 
-                println!("{}", string);
+                println!("{string}");
             }
 
             line_start = line_end + 1;
@@ -286,7 +286,7 @@ fn add_part(part: &str, string: &mut String, side: Side) -> Result<()> {
         match side {
             Side::Left => {
                 let w = &part[part.len() - 10..];
-                string.write_str(&format!("... {}", w))?;
+                string.write_str(&format!("... {w}"))?;
             }
             Side::Center => {
                 if part.len() <= 30 {
@@ -294,12 +294,12 @@ fn add_part(part: &str, string: &mut String, side: Side) -> Result<()> {
                 } else {
                     let w1 = &part[..10];
                     let w2 = &part[part.len() - 10..];
-                    string.write_str(&format!("{} ... {}", w1, w2))?;
+                    string.write_str(&format!("{w1} ... {w2}"))?;
                 }
             }
             Side::Right => {
                 let w = &part[..10];
-                string.write_str(&format!("{} ...", w))?;
+                string.write_str(&format!("{w} ..."))?;
             }
         }
     } else {
