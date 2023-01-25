@@ -8,6 +8,6 @@ repository = "https://github.com/Mountlex/collclean"
 description = "Clean up collaboration commands in LaTeX files"
 
 [dependencies]
-clap = "4"
-anyhow = "1"
+clap = "4.1.4"
+anyhow = "1.0.68"
 yansi = "0.5.1"
