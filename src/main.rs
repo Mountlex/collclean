@@ -107,10 +107,6 @@ impl Deletion {
     fn len(&self) -> usize {
         self.end - self.start + 1
     }
-
-    fn line(&self) -> usize {
-        self.line
-    }
 }
 
 enum Type {
@@ -227,7 +223,7 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
             let mut line_deletions = vec![];
 
             while let Some(del) = current {
-                if del.line() == l {
+                if del.line == l {
                     line_deletions.push(del);
                     current = deletions_iter.next();
                 } else {
