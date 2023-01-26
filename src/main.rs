@@ -55,14 +55,16 @@ struct Pattern {
     text: Vec<char>,
     start: Option<usize>,
     current: usize,
+    typ: Type,
 }
 
 impl Pattern {
-    fn new(text: &str) -> Self {
+    fn new(text: &str, typ: Type) -> Self {
         Self {
             text: text.chars().collect(),
             start: None,
             current: 0,
+            typ,
         }
     }
 
@@ -70,23 +72,37 @@ impl Pattern {
         self.text.len()
     }
 
-    fn next(&mut self, idx: usize, c: char) -> Option<usize> {
-        if self.text[self.current] == c {
+    fn reset(&mut self) {
+        self.start = None;
+        self.current = 0;
+    }
+
+    fn next(&mut self, idx: usize, c: char) -> Option<(usize, usize)> {
+        if self.current < self.text.len() && self.text[self.current] == c {
             if self.start.is_none() {
                 self.start = Some(idx);
             }
             self.current += 1;
-            if self.current == self.text.len() {
+            if self.current == self.text.len() && self.typ != Type::Command {
                 let tmp = self.start;
-                self.start = None;
-                self.current = 0;
-                tmp
+                self.reset();
+                Some((tmp.unwrap(), self.len()))
             } else {
                 None
             }
+        } else if (c.is_whitespace() && c != '\n')
+            && self.current >= self.text.len()
+            && self.typ == Type::Command
+        {
+            self.current += 1;
+            None
+        } else if c == '{' && self.current >= self.text.len() && self.typ == Type::Command {
+            self.current += 1;
+            let tmp = Some((self.start.unwrap(), self.current));
+            self.reset();
+            tmp
         } else {
-            self.current = 0;
-            self.start = None;
+            self.reset();
             None
         }
     }
@@ -109,7 +125,9 @@ impl Deletion {
     }
 }
 
+#[derive(PartialEq)]
 enum Type {
+    // pattern has an implicit opening bracket
     Command,
     Other,
 }
@@ -120,13 +138,13 @@ fn find_deletions(
     from: Option<usize>,
     to: Option<usize>,
 ) -> Result<Vec<Deletion>> {
-    let mut patterns: Vec<(Pattern, Type)> = commands
+    let mut patterns: Vec<Pattern> = commands
         .into_iter()
-        .map(|comm| (Pattern::new(&format!("\\{comm}{{")), Type::Command))
+        .map(|comm| Pattern::new(&format!("\\{comm}"), Type::Command))
         .collect();
-    patterns.push((Pattern::new("\\{"), Type::Other));
-    patterns.push((Pattern::new("\\}"), Type::Other));
-    patterns.push((Pattern::new("\\%"), Type::Other));
+    patterns.push(Pattern::new("\\{", Type::Other));
+    patterns.push(Pattern::new("\\}", Type::Other));
+    patterns.push(Pattern::new("\\%", Type::Other));
 
     let mut deletions: Vec<Deletion> = vec![];
     let mut depth: usize = 0;
@@ -141,13 +159,13 @@ fn find_deletions(
         }
 
         if !commented {
-            for (p, t) in patterns.iter_mut() {
-                if let Some(s) = p.next(i, c) {
-                    match t {
+            for p in patterns.iter_mut() {
+                if let Some((s, len)) = p.next(i, c) {
+                    match p.typ {
                         Type::Command => {
                             deleted_depths.push(depth);
                             depth += 1;
-                            let deletion = Deletion::range(s, s + p.len() - 1, line);
+                            let deletion = Deletion::range(s, s + len - 1, line);
                             deletions.push(deletion);
                         }
                         Type::Other => {}
@@ -193,8 +211,7 @@ fn find_deletions(
         .filter(|comm| {
             (from.is_none()
                 || (comm.0.line + 1 >= from.unwrap() && comm.1.line + 1 >= from.unwrap()))
-                && (to.is_none()
-                    || (comm.0.line < to.unwrap() && comm.1.line < to.unwrap()))
+                && (to.is_none() || (comm.0.line < to.unwrap() && comm.1.line < to.unwrap()))
         })
         .flat_map(|comm| vec![comm.0, comm.1])
         .collect();
@@ -358,6 +375,22 @@ mod test_clean {
         let mut text = String::from("\\anew{\\nnew{ a{v}b} \\{ }");
         clean(&mut text, vec!["anew", "nnew"])?;
         assert_eq!(text, " a{v}b \\{ ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_with_whitespace() -> Result<()> {
+        let mut text = String::from("\\anew   { { a{v}b} \\{ }");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, " { a{v}b} \\{ ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_with_whitespace_2() -> Result<()> {
+        let mut text = String::from("\\anew  f { { a{v}b} \\{ } \\anew { f}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\anew  f { { a{v}b} \\{ }  f");
         Ok(())
     }
 
