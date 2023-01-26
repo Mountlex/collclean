@@ -7,10 +7,10 @@
 
 ## Usage
 
-Consider a valid LaTeX file `paper.tex`, where several parts are marked by collaborators using `\alice` and `\bob`:
+Consider a _valid_ LaTeX file `paper.tex`, where several parts are marked by collaborators using `\alice` and `\bob`:
 
 ```tex
-Lorem ipsum \alice{dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+Lorem ipsum \alice{dolor sit amet, consetetur \bob{sadipscing} elitr, sed diam nonumy eirmod tempor 
 invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.} At vero eos et accusam
 et justo duo dolores et ea rebum. 
 \[
@@ -47,13 +47,23 @@ et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata san
 est Lorem {ipsum dolor sit amet.}
 ```
 
-### Further notes:
+### Options
 
-* The command definitions (e.g. via `\newcommand`) will **not** get removed.
+* Output to a different file (input file stays untouched): `-o output.tex`
+* Dry run (see remove comments in prompt; files stay unchanged): `--dry`
+* Line range (only remove marks which are _completely_ inside range): `--from <line>` and `--to <line>`. One-sided ranges are also supported.
+
+### Further notes
+
+* The command definitions (e.g. via `\newcommand`) will **not** be removed.
 * Commented lines are ignored.
-* If the original file should stay unchanged, use the option `-o output.tex` to write the cleaned content to the file `output.tex`.
+* If the file is not valid, e.g., there are more opening brackets than closing brackets, the program stops and does not make changes.
 
-## Installation:
+## TODO
+
+* If there is a whitespace between the command and the opening bracket (`\alice {text}`) the command is currently _not_ detected.
+
+## Installation
 
 After [installing Rust](https://rustup.rs/), install `collclean` via `cargo`:
 
