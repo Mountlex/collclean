@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/collclean.svg)](https://crates.io/crates/collclean)
 ![actively developed](https://img.shields.io/badge/maintenance-actively--developed-brightgreen.svg)
-[![dependency status](https://deps.rs/crate/collclean/0.3.0/status.svg)](https://deps.rs/crate/collclean/0.3.0)
+[![dependency status](https://deps.rs/crate/collclean/0.4.0/status.svg)](https://deps.rs/crate/collclean/0.3.0)
 ![License: MIT/Apache-2.0](https://img.shields.io/crates/l/collclean.svg)
 
 ## Usage
@@ -10,7 +10,7 @@
 Consider a _valid_ LaTeX file `paper.tex`, where several parts are marked by collaborators using `\alice` and `\bob`:
 
 ```tex
-Lorem ipsum \alice{dolor sit amet, consetetur \bob{sadipscing} elitr, sed diam nonumy eirmod tempor 
+Lorem ipsum \alice{dolor sit amet, consetetur \b \bob {sadipscing} elitr, sed diam nonumy eirmod tempor 
 invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.} At vero eos et accusam
 et justo duo dolores et ea rebum. 
 \[
@@ -33,7 +33,7 @@ collclean paper.tex alice bob
  The file `paper.tex` will then look like this:
 
 ```tex
-Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor 
+Lorem ipsum dolor sit amet, consetetur \b sadipscing elitr, sed diam nonumy eirmod tempor 
 invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam
 et justo duo dolores et ea rebum. 
 \[
@@ -59,9 +59,6 @@ est Lorem {ipsum dolor sit amet.}
 * Commented lines are ignored.
 * If the file is not valid, e.g., there are more opening brackets than closing brackets, the program stops and does not make changes.
 
-## TODO
-
-* If there is a whitespace between the command and the opening bracket (`\alice {text}`) the command is currently _not_ detected.
 
 ## Installation
 
