@@ -78,6 +78,24 @@ impl Pattern {
     }
 
     fn next(&mut self, idx: usize, c: char) -> Option<(usize, usize)> {
+        if self.current >= self.text.len() && self.typ == Type::Command {
+            if c.is_whitespace() && c != '\n' {
+                self.current += 1;
+                return None;
+            } else if c == '{' {
+                self.current += 1;
+                let tmp = Some((self.start.unwrap(), self.current));
+                self.reset();
+                return tmp;
+            } else {
+                self.reset();
+            }
+        }
+
+        if self.current < self.text.len() && self.text[self.current] != c {
+            self.reset();
+        }
+
         if self.current < self.text.len() && self.text[self.current] == c {
             if self.start.is_none() {
                 self.start = Some(idx);
@@ -90,17 +108,6 @@ impl Pattern {
             } else {
                 None
             }
-        } else if (c.is_whitespace() && c != '\n')
-            && self.current >= self.text.len()
-            && self.typ == Type::Command
-        {
-            self.current += 1;
-            None
-        } else if c == '{' && self.current >= self.text.len() && self.typ == Type::Command {
-            self.current += 1;
-            let tmp = Some((self.start.unwrap(), self.current));
-            self.reset();
-            tmp
         } else {
             self.reset();
             None
@@ -371,6 +378,22 @@ mod test_clean {
     }
 
     #[test]
+    fn test_clean_double_fake() -> Result<()> {
+        let mut text = String::from("\\ane\\anew{ a{v}b \\% \\{ }");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\ane a{v}b \\% \\{ ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_double() -> Result<()> {
+        let mut text = String::from("\\anew{\\anew{ a{v}b \\% \\{ }}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, " a{v}b \\% \\{ ");
+        Ok(())
+    }
+
+    #[test]
     fn test_clean_2() -> Result<()> {
         let mut text = String::from("\\anew{\\nnew{ a{v}b} \\{ }");
         clean(&mut text, vec!["anew", "nnew"])?;
@@ -383,6 +406,14 @@ mod test_clean {
         let mut text = String::from("\\anew   { { a{v}b} \\{ }");
         clean(&mut text, vec!["anew"])?;
         assert_eq!(text, " { a{v}b} \\{ ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_with_whitespace_double() -> Result<()> {
+        let mut text = String::from("\\anew  \\anew  { { a{v}b} \\{ }");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\anew   { a{v}b} \\{ ");
         Ok(())
     }
 
@@ -420,6 +451,14 @@ mod test_clean {
         let mut text = String::from("% % \\anew{ } \n \\anew{}");
         clean(&mut text, vec!["anew"])?;
         assert_eq!(text, "% % \\anew{ } \n ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_no_newcommmand() -> Result<()> {
+        let mut text = String::from("\\newcommand{\\anew}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\newcommand{\\anew}");
         Ok(())
     }
 }
