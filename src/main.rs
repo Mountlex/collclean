@@ -6,7 +6,7 @@ use yansi::{Paint, Style};
 
 fn main() -> Result<()> {
     let matches = Command::new("collclean")
-        .version("0.4.0")
+        .version("0.4.1")
         .author("Alexander Lindermayr <alexander.lindermayr97@gmail.com>")
         .about("Clean LaTeX files after a collaboration.")
         .arg(arg!(<FILE>))
