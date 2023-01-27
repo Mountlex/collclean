@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/collclean.svg)](https://crates.io/crates/collclean)
 ![actively developed](https://img.shields.io/badge/maintenance-actively--developed-brightgreen.svg)
-[![dependency status](https://deps.rs/crate/collclean/0.4.0/status.svg)](https://deps.rs/crate/collclean/0.3.0)
+[![dependency status](https://deps.rs/crate/collclean/0.4.0/status.svg)](https://deps.rs/crate/collclean/0.4.0)
 ![License: MIT/Apache-2.0](https://img.shields.io/crates/l/collclean.svg)
 
 ## Usage
