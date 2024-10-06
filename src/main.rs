@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use anyhow::{bail, Result};
 use clap::{arg, ArgAction, Command};
-use yansi::{Paint, Style};
+use yansi::Paint;
 
 fn main() -> Result<()> {
     let matches = Command::new("collclean")
@@ -259,7 +259,7 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
                 let mut string = String::new();
                 let line_str = format!(
                     "{}",
-                    Style::default().dimmed().paint(format!("L{}: ", l + 1))
+                    format!("L{}: ", l + 1).dim()
                 );
                 string.write_str(&line_str)?;
 
