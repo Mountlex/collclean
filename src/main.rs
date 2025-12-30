@@ -23,7 +23,11 @@ fn main() -> Result<()> {
 
     if let (Some(from), Some(to)) = (from_line, to_line) {
         if from > to {
-            bail!("--from ({}) must be less than or equal to --to ({})", from, to);
+            bail!(
+                "--from ({}) must be less than or equal to --to ({})",
+                from,
+                to
+            );
         }
     }
 
@@ -158,10 +162,7 @@ fn get_context_around(text: &str, byte_pos: usize, char_count: usize) -> String 
     let start = char_pos.saturating_sub(char_count);
     let end = (char_pos + char_count).min(char_indices.len());
 
-    char_indices[start..end]
-        .iter()
-        .map(|(_, c)| *c)
-        .collect()
+    char_indices[start..end].iter().map(|(_, c)| *c).collect()
 }
 
 fn find_deletions(
@@ -291,10 +292,7 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
 
             if !line_deletions.is_empty() {
                 let mut string = String::new();
-                let line_str = format!(
-                    "{}",
-                    format!("L{}: ", l + 1).dim()
-                );
+                let line_str = format!("{}", format!("L{}: ", l + 1).dim());
                 string.write_str(&line_str)?;
 
                 let first_part = &text[line_start..line_deletions.first().unwrap().start];
@@ -664,5 +662,399 @@ mod test_clean {
         let text = String::from("\\anew{ unclosed");
         let result = find_deletions(&text, vec!["anew"], None, None);
         assert!(result.is_err());
+    }
+
+    // ============ Edge cases ============
+
+    #[test]
+    fn test_empty_file() -> Result<()> {
+        let mut text = String::from("");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "");
+        Ok(())
+    }
+
+    #[test]
+    fn test_whitespace_only() -> Result<()> {
+        let mut text = String::from("   \n\t\n   ");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "   \n\t\n   ");
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_command_content() -> Result<()> {
+        let mut text = String::from("\\anew{}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_at_file_start() -> Result<()> {
+        let mut text = String::from("\\anew{start} middle end");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "start middle end");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_at_file_end() -> Result<()> {
+        let mut text = String::from("start middle \\anew{end}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "start middle end");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_commands_same_line() -> Result<()> {
+        let mut text = String::from("\\alice{one} and \\bob{two} and \\alice{three}");
+        clean(&mut text, vec!["alice", "bob"])?;
+        assert_eq!(text, "one and two and three");
+        Ok(())
+    }
+
+    #[test]
+    fn test_deeply_nested_commands() -> Result<()> {
+        let mut text = String::from("\\a{\\b{\\c{\\d{deep}}}}");
+        clean(&mut text, vec!["a", "b", "c", "d"])?;
+        assert_eq!(text, "deep");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_spanning_lines() -> Result<()> {
+        let mut text = String::from("\\anew{line1\nline2\nline3}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "line1\nline2\nline3");
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_commands() -> Result<()> {
+        let mut text = String::from("\\anew{\\bob{\\charlie{x}}}");
+        clean(&mut text, vec!["anew", "bob", "charlie"])?;
+        assert_eq!(text, "x");
+        Ok(())
+    }
+
+    #[test]
+    fn test_adjacent_commands() -> Result<()> {
+        let mut text = String::from("\\a{x}\\b{y}\\c{z}");
+        clean(&mut text, vec!["a", "b", "c"])?;
+        assert_eq!(text, "xyz");
+        Ok(())
+    }
+
+    // ============ Whitespace handling ============
+
+    #[test]
+    fn test_tab_before_brace() -> Result<()> {
+        let mut text = String::from("\\anew\t{content}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "content");
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_whitespace_before_brace() -> Result<()> {
+        let mut text = String::from("\\anew \t  {content}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "content");
+        Ok(())
+    }
+
+    #[test]
+    fn test_newline_before_brace_no_match() -> Result<()> {
+        // Newline between command and brace should NOT be treated as the command
+        let mut text = String::from("\\anew\n{content}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\anew\n{content}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_content_with_leading_trailing_whitespace() -> Result<()> {
+        let mut text = String::from("\\anew{  spaced  }");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "  spaced  ");
+        Ok(())
+    }
+
+    // ============ LaTeX-specific patterns ============
+
+    #[test]
+    fn test_command_in_math_mode() -> Result<()> {
+        let mut text = String::from("$x = \\anew{y + z}$");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "$x = y + z$");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_in_display_math() -> Result<()> {
+        let mut text = String::from("\\[\n\\anew{A = B}\n\\]");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\[\nA = B\n\\]");
+        Ok(())
+    }
+
+    #[test]
+    fn test_similar_command_prefixes() -> Result<()> {
+        // Should only match exact command name
+        let mut text = String::from("\\anew{x} \\anewer{y} \\an{z}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "x \\anewer{y} \\an{z}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_with_numbers() -> Result<()> {
+        let mut text = String::from("\\rev1{first} \\rev2{second}");
+        clean(&mut text, vec!["rev1", "rev2"])?;
+        assert_eq!(text, "first second");
+        Ok(())
+    }
+
+    #[test]
+    fn test_escaped_braces_in_content() -> Result<()> {
+        let mut text = String::from("\\anew{set \\{ a, b \\}}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "set \\{ a, b \\}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_nested_regular_braces() -> Result<()> {
+        let mut text = String::from("\\anew{outer {inner {deep}} end}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "outer {inner {deep}} end");
+        Ok(())
+    }
+
+    #[test]
+    fn test_latex_environments_preserved() -> Result<()> {
+        let mut text = String::from("\\begin{equation}\n\\anew{x = y}\n\\end{equation}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\begin{equation}\nx = y\n\\end{equation}");
+        Ok(())
+    }
+
+    // ============ Comment handling ============
+
+    #[test]
+    fn test_comment_at_end_of_line() -> Result<()> {
+        let mut text = String::from("\\anew{visible} % \\anew{commented}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "visible % \\anew{commented}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_comment_lines() -> Result<()> {
+        let mut text = String::from("% \\anew{a}\n% \\anew{b}\n\\anew{c}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "% \\anew{a}\n% \\anew{b}\nc");
+        Ok(())
+    }
+
+    #[test]
+    fn test_escaped_percent_not_comment() -> Result<()> {
+        let mut text = String::from("\\anew{100\\% done}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "100\\% done");
+        Ok(())
+    }
+
+    #[test]
+    fn test_comment_then_code_same_line_next() -> Result<()> {
+        let mut text = String::from("% comment\n\\anew{code}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "% comment\ncode");
+        Ok(())
+    }
+
+    // ============ Line range edge cases ============
+
+    #[test]
+    fn test_line_range_first_line_only() -> Result<()> {
+        let mut text = String::from("\\anew{first}\n\\anew{second}");
+        clean_with_range(&mut text, vec!["anew"], Some(1), Some(1))?;
+        assert_eq!(text, "first\n\\anew{second}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_last_line_only() -> Result<()> {
+        let mut text = String::from("\\anew{first}\n\\anew{second}");
+        clean_with_range(&mut text, vec!["anew"], Some(2), Some(2))?;
+        assert_eq!(text, "\\anew{first}\nsecond");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_spanning_command_excluded() -> Result<()> {
+        // Command spans lines 1-3, but range is only line 2
+        // Command should NOT be removed since it's not completely inside range
+        let mut text = String::from("\\anew{line1\nline2\nline3}");
+        clean_with_range(&mut text, vec!["anew"], Some(2), Some(2))?;
+        assert_eq!(text, "\\anew{line1\nline2\nline3}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_spanning_command_included() -> Result<()> {
+        // Command spans lines 1-3, range includes all
+        let mut text = String::from("\\anew{line1\nline2\nline3}");
+        clean_with_range(&mut text, vec!["anew"], Some(1), Some(3))?;
+        assert_eq!(text, "line1\nline2\nline3");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_no_commands_in_range() -> Result<()> {
+        let mut text = String::from("plain\n\\anew{marked}\nplain");
+        clean_with_range(&mut text, vec!["anew"], Some(1), Some(1))?;
+        assert_eq!(text, "plain\n\\anew{marked}\nplain");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_from_zero_treated_as_start() -> Result<()> {
+        // from=0 should work (though 1-indexed, 0 means "from start")
+        let mut text = String::from("\\anew{first}\n\\anew{second}");
+        clean_with_range(&mut text, vec!["anew"], Some(0), Some(1))?;
+        assert_eq!(text, "first\n\\anew{second}");
+        Ok(())
+    }
+
+    // ============ Multiple/complex commands ============
+
+    #[test]
+    fn test_three_different_commands() -> Result<()> {
+        let mut text = String::from("\\alice{A} \\bob{B} \\charlie{C}");
+        clean(&mut text, vec!["alice", "bob", "charlie"])?;
+        assert_eq!(text, "A B C");
+        Ok(())
+    }
+
+    #[test]
+    fn test_same_command_repeated() -> Result<()> {
+        let mut text = String::from("\\x{1}\\x{2}\\x{3}\\x{4}\\x{5}");
+        clean(&mut text, vec!["x"])?;
+        assert_eq!(text, "12345");
+        Ok(())
+    }
+
+    #[test]
+    fn test_interleaved_nested_commands() -> Result<()> {
+        let mut text = String::from("\\a{1\\b{2}3}\\b{4\\a{5}6}");
+        clean(&mut text, vec!["a", "b"])?;
+        assert_eq!(text, "123456");
+        Ok(())
+    }
+
+    #[test]
+    fn test_partial_command_match() -> Result<()> {
+        // "new" should not match "\anew"
+        let mut text = String::from("\\anew{content}");
+        clean(&mut text, vec!["new"])?;
+        assert_eq!(text, "\\anew{content}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_command_not_in_list() -> Result<()> {
+        let mut text = String::from("\\alice{A} \\bob{B}");
+        clean(&mut text, vec!["charlie"])?;
+        assert_eq!(text, "\\alice{A} \\bob{B}");
+        Ok(())
+    }
+
+    // ============ Error handling ============
+
+    #[test]
+    fn test_multiple_unmatched_closing() {
+        let text = String::from("text } more } end");
+        let result = find_deletions(&text, vec!["anew"], None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_multiple_unmatched_opening() {
+        let text = String::from("\\anew{ \\bob{ content }");
+        let result = find_deletions(&text, vec!["anew", "bob"], None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_in_nested() {
+        let text = String::from("\\anew{outer \\bob{inner}");
+        let result = find_deletions(&text, vec!["anew", "bob"], None, None);
+        assert!(result.is_err());
+    }
+
+    // ============ Real-world LaTeX patterns ============
+
+    #[test]
+    fn test_citation_inside_command() -> Result<()> {
+        let mut text = String::from("\\anew{as shown in~\\cite{smith2020}}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "as shown in~\\cite{smith2020}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_footnote_inside_command() -> Result<()> {
+        let mut text = String::from("\\anew{text\\footnote{A footnote.}}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "text\\footnote{A footnote.}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_textbf_inside_command() -> Result<()> {
+        let mut text = String::from("\\anew{\\textbf{bold} and normal}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "\\textbf{bold} and normal");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiline_paragraph() -> Result<()> {
+        let mut text = String::from(
+            "\\anew{This is a long paragraph\nthat spans multiple lines\nand has various content.}",
+        );
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(
+            text,
+            "This is a long paragraph\nthat spans multiple lines\nand has various content."
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_table_environment() -> Result<()> {
+        let mut text =
+            String::from("\\begin{tabular}{cc}\n\\anew{A} & B \\\\\nC & \\anew{D}\n\\end{tabular}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(
+            text,
+            "\\begin{tabular}{cc}\nA & B \\\\\nC & D\n\\end{tabular}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_itemize_environment() -> Result<()> {
+        let mut text = String::from(
+            "\\begin{itemize}\n\\item \\anew{First}\n\\item \\bob{Second}\n\\end{itemize}",
+        );
+        clean(&mut text, vec!["anew", "bob"])?;
+        assert_eq!(
+            text,
+            "\\begin{itemize}\n\\item First\n\\item Second\n\\end{itemize}"
+        );
+        Ok(())
     }
 }
