@@ -6,7 +6,7 @@ use yansi::Paint;
 
 fn main() -> Result<()> {
     let matches = Command::new("collclean")
-        .version("0.4.1")
+        .version("0.4.2")
         .author("Alexander Lindermayr <alexander.lindermayr97@gmail.com>")
         .about("Clean LaTeX files after a collaboration.")
         .arg(arg!(<FILE>))
@@ -20,6 +20,13 @@ fn main() -> Result<()> {
     let dry = matches.get_flag("dry");
     let from_line = matches.get_one::<usize>("from").copied();
     let to_line = matches.get_one::<usize>("to").copied();
+
+    if let (Some(from), Some(to)) = (from_line, to_line) {
+        if from > to {
+            bail!("--from ({}) must be less than or equal to --to ({})", from, to);
+        }
+    }
+
     let path = matches
         .get_one::<String>("FILE")
         .map(std::path::PathBuf::from);
@@ -28,24 +35,26 @@ fn main() -> Result<()> {
         .expect("no commands")
         .map(|s| s.as_str())
         .collect();
-    if let Some(path) = path {
-        if path.exists() {
-            let mut text = std::fs::read_to_string(&path)?;
-            let deletions = find_deletions(&text, commands, from_line, to_line)?;
-            print_deletions(&text, &deletions)?;
 
-            if !dry {
-                let num = clean_text(&mut text, deletions)?;
-                println!("Removed {} commands!", num / 2);
-                if let Some(output) = matches
-                    .get_one::<String>("output")
-                    .map(std::path::PathBuf::from)
-                {
-                    std::fs::write(output, text)?;
-                } else {
-                    std::fs::write(path, text)?;
-                }
-            }
+    let path = path.ok_or_else(|| anyhow::anyhow!("No file path provided"))?;
+    if !path.exists() {
+        bail!("File not found: {}", path.display());
+    }
+
+    let mut text = std::fs::read_to_string(&path)?;
+    let deletions = find_deletions(&text, commands, from_line, to_line)?;
+    print_deletions(&text, &deletions)?;
+
+    if !dry {
+        let num = clean_text(&mut text, deletions)?;
+        println!("Removed {} commands!", num / 2);
+        if let Some(output) = matches
+            .get_one::<String>("output")
+            .map(std::path::PathBuf::from)
+        {
+            std::fs::write(output, text)?;
+        } else {
+            std::fs::write(path, text)?;
         }
     }
     Ok(())
@@ -139,6 +148,22 @@ enum Type {
     Other,
 }
 
+fn get_context_around(text: &str, byte_pos: usize, char_count: usize) -> String {
+    let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+    let char_pos = char_indices
+        .iter()
+        .position(|(i, _)| *i >= byte_pos)
+        .unwrap_or(char_indices.len());
+
+    let start = char_pos.saturating_sub(char_count);
+    let end = (char_pos + char_count).min(char_indices.len());
+
+    char_indices[start..end]
+        .iter()
+        .map(|(_, c)| *c)
+        .collect()
+}
+
 fn find_deletions(
     text: &str,
     commands: Vec<&str>,
@@ -185,13 +210,20 @@ fn find_deletions(
         match c {
             '}' if !commented => {
                 if depth == 0 {
-                    bail!("It seems that there is a closing bracket without opening counterpart! Stopping! (no changes made) {}", &text[(i.max(10) - 10)..(i+10).min(text.len() - 1)])
+                    let context = get_context_around(text, i, 10);
+                    bail!("It seems that there is a closing bracket without opening counterpart! Stopping! (no changes made) {}", context)
                 }
                 depth -= 1;
                 if let Some(last) = deleted_depths.last() {
                     if *last == depth {
                         deleted_depths.pop();
-                        let opening = deletions.pop().expect("It seems that there is a closing bracket without matching opening bracket! Stopping! (no changes made)");
+                        let opening = match deletions.pop() {
+                            Some(d) => d,
+                            None => {
+                                let context = get_context_around(text, i, 10);
+                                bail!("It seems that there is a closing bracket without matching opening bracket! Stopping! (no changes made) {}", context)
+                            }
+                        };
                         let closing = Deletion::range(i, i, line);
 
                         deleted_commands.push((opening, closing));
@@ -216,9 +248,11 @@ fn find_deletions(
     let mut final_deletions: Vec<Deletion> = deleted_commands
         .into_iter()
         .filter(|comm| {
-            (from.is_none()
-                || (comm.0.line + 1 >= from.unwrap() && comm.1.line + 1 >= from.unwrap()))
-                && (to.is_none() || (comm.0.line < to.unwrap() && comm.1.line < to.unwrap()))
+            let opening_line = comm.0.line + 1; // Convert to 1-indexed
+            let closing_line = comm.1.line + 1; // Convert to 1-indexed
+            let from_ok = from.is_none_or(|f| opening_line >= f && closing_line >= f);
+            let to_ok = to.is_none_or(|t| opening_line <= t && closing_line <= t);
+            from_ok && to_ok
         })
         .flat_map(|comm| vec![comm.0, comm.1])
         .collect();
@@ -279,12 +313,22 @@ fn print_deletions(text: &str, deletions: &[Deletion]) -> Result<()> {
                 let last_part = &text[line_deletions.last().unwrap().end + 1..line_end];
                 add_part(last_part, &mut string, Side::Right)?;
 
-                string.retain(|c| c != '\n');
+                string.retain(|c| c != '\n' && c != '\r');
 
                 println!("{string}");
             }
 
-            line_start = line_end + 1;
+            // Handle both Unix (\n) and Windows (\r\n) line endings
+            let mut next_start = line_end;
+            if text[next_start..].starts_with("\r\n") {
+                next_start += 2;
+            } else if text[next_start..].starts_with('\n') {
+                next_start += 1;
+            } else if next_start < text.len() {
+                // No newline at end of file, we're done
+                next_start = text.len();
+            }
+            line_start = next_start;
         }
         Ok(())
     }
@@ -301,24 +345,34 @@ enum Side {
     Right,
 }
 
+fn take_first_chars(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+fn take_last_chars(s: &str, n: usize) -> String {
+    let char_count = s.chars().count();
+    s.chars().skip(char_count.saturating_sub(n)).collect()
+}
+
 fn add_part(part: &str, string: &mut String, side: Side) -> Result<()> {
-    if part.len() > 10 {
+    let char_count = part.chars().count();
+    if char_count > 10 {
         match side {
             Side::Left => {
-                let w = &part[part.len() - 10..];
+                let w = take_last_chars(part, 10);
                 string.write_str(&format!("... {w}"))?;
             }
             Side::Center => {
-                if part.len() <= 30 {
+                if char_count <= 30 {
                     string.write_str(part)?;
                 } else {
-                    let w1 = &part[..10];
-                    let w2 = &part[part.len() - 10..];
+                    let w1 = take_first_chars(part, 10);
+                    let w2 = take_last_chars(part, 10);
                     string.write_str(&format!("{w1} ... {w2}"))?;
                 }
             }
             Side::Right => {
-                let w = &part[..10];
+                let w = take_first_chars(part, 10);
                 string.write_str(&format!("{w} ..."))?;
             }
         }
@@ -460,5 +514,155 @@ mod test_clean {
         clean(&mut text, vec!["anew"])?;
         assert_eq!(text, "\\newcommand{\\anew}");
         Ok(())
+    }
+
+    // Tests for UTF-8 handling
+    #[test]
+    fn test_clean_with_unicode() -> Result<()> {
+        let mut text = String::from("\\anew{héllo wörld émoji 🎉}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "héllo wörld émoji 🎉");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_unicode_command_content() -> Result<()> {
+        let mut text = String::from("Préfix \\anew{中文内容} Süffix");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "Préfix 中文内容 Süffix");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_nested_unicode() -> Result<()> {
+        let mut text = String::from("\\alice{über \\bob{naïve} café}");
+        clean(&mut text, vec!["alice", "bob"])?;
+        assert_eq!(text, "über naïve café");
+        Ok(())
+    }
+
+    // Tests for line range filtering
+    fn clean_with_range(
+        text: &mut String,
+        commands: Vec<&str>,
+        from: Option<usize>,
+        to: Option<usize>,
+    ) -> Result<usize> {
+        let deletions = find_deletions(text, commands, from, to)?;
+        clean_text(text, deletions)
+    }
+
+    #[test]
+    fn test_line_range_from() -> Result<()> {
+        let mut text = String::from("\\anew{line1}\n\\anew{line2}\n\\anew{line3}");
+        clean_with_range(&mut text, vec!["anew"], Some(2), None)?;
+        assert_eq!(text, "\\anew{line1}\nline2\nline3");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_to() -> Result<()> {
+        let mut text = String::from("\\anew{line1}\n\\anew{line2}\n\\anew{line3}");
+        clean_with_range(&mut text, vec!["anew"], None, Some(2))?;
+        assert_eq!(text, "line1\nline2\n\\anew{line3}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_from_to() -> Result<()> {
+        let mut text = String::from("\\anew{line1}\n\\anew{line2}\n\\anew{line3}");
+        clean_with_range(&mut text, vec!["anew"], Some(2), Some(2))?;
+        assert_eq!(text, "\\anew{line1}\nline2\n\\anew{line3}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_range_inclusive() -> Result<()> {
+        // Verify that --to is inclusive (line 2 should be cleaned)
+        let mut text = String::from("\\anew{line1}\n\\anew{line2}\n\\anew{line3}");
+        clean_with_range(&mut text, vec!["anew"], Some(1), Some(2))?;
+        assert_eq!(text, "line1\nline2\n\\anew{line3}");
+        Ok(())
+    }
+
+    // Tests for Windows line endings
+    #[test]
+    fn test_clean_windows_line_endings() -> Result<()> {
+        let mut text = String::from("\\anew{line1}\r\n\\anew{line2}\r\n\\anew{line3}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "line1\r\nline2\r\nline3");
+        Ok(())
+    }
+
+    #[test]
+    fn test_clean_mixed_line_endings() -> Result<()> {
+        let mut text = String::from("\\anew{line1}\n\\anew{line2}\r\n\\anew{line3}");
+        clean(&mut text, vec!["anew"])?;
+        assert_eq!(text, "line1\nline2\r\nline3");
+        Ok(())
+    }
+
+    // Tests for helper functions
+    #[test]
+    fn test_take_first_chars_ascii() {
+        assert_eq!(take_first_chars("hello world", 5), "hello");
+        assert_eq!(take_first_chars("hi", 10), "hi");
+        assert_eq!(take_first_chars("", 5), "");
+    }
+
+    #[test]
+    fn test_take_first_chars_unicode() {
+        assert_eq!(take_first_chars("héllo wörld", 5), "héllo");
+        assert_eq!(take_first_chars("中文内容测试", 3), "中文内");
+        assert_eq!(take_first_chars("🎉🎊🎁🎄", 2), "🎉🎊");
+    }
+
+    #[test]
+    fn test_take_last_chars_ascii() {
+        assert_eq!(take_last_chars("hello world", 5), "world");
+        assert_eq!(take_last_chars("hi", 10), "hi");
+        assert_eq!(take_last_chars("", 5), "");
+    }
+
+    #[test]
+    fn test_take_last_chars_unicode() {
+        assert_eq!(take_last_chars("héllo wörld", 5), "wörld");
+        assert_eq!(take_last_chars("中文内容测试", 3), "容测试");
+        assert_eq!(take_last_chars("🎉🎊🎁🎄", 2), "🎁🎄");
+    }
+
+    #[test]
+    fn test_get_context_around_ascii() {
+        let text = "0123456789abcdefghij";
+        assert_eq!(get_context_around(text, 10, 3), "789abc"); // 3 before 'a', 3 from 'a' onwards
+        assert_eq!(get_context_around(text, 0, 3), "012"); // at start, 3 chars from position 0
+        assert_eq!(get_context_around(text, 19, 3), "ghij"); // near end, 3 before 'j' + 'j'
+    }
+
+    #[test]
+    fn test_get_context_around_unicode() {
+        let text = "préfix中文süffix";
+        // Get context around the Chinese characters
+        let ctx = get_context_around(text, 7, 3); // Around '中'
+        assert!(ctx.chars().count() <= 6);
+        // Should not panic on any position
+        for (i, _) in text.char_indices() {
+            let _ = get_context_around(text, i, 5);
+        }
+    }
+
+    // Test error cases produce errors (not panics)
+    #[test]
+    fn test_unmatched_bracket_error_with_unicode() {
+        let text = String::from("héllo } wörld");
+        let result = find_deletions(&text, vec!["anew"], None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unclosed_bracket_error() {
+        let text = String::from("\\anew{ unclosed");
+        let result = find_deletions(&text, vec!["anew"], None, None);
+        assert!(result.is_err());
     }
 }
